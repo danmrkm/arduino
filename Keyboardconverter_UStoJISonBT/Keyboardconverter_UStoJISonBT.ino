@@ -11,6 +11,9 @@ typedef struct {
   uint8_t keys[REPORT_KEYS];
 } KeyReport;
 
+
+unsigned long millis();
+
 USB Usb;
 BTD Btd(&Usb); // You have to create the Bluetooth Dongle instance like so
 
@@ -19,7 +22,6 @@ BTD Btd(&Usb); // You have to create the Bluetooth Dongle instance like so
 
 // 2回目以降はこちら
 BTHID bthid(&Btd);
-
 
 
 static const uint8_t UsToJisTable[] =
@@ -110,6 +112,7 @@ static const uint8_t _hidReportDescriptor[] PROGMEM =
 KeyReport keyReport;
 bool shiftmodify;
 uint8_t modif_key;
+unsigned long time;
 
 void sendReport() {
   HID().SendReport(2, &keyReport ,sizeof(KeyReport));
@@ -127,12 +130,12 @@ uint8_t convertkey(uint8_t key, uint8_t mod) {
   for (i=0; i< sizeof(UsToJisTable)/sizeof(UsToJisTable[0]); i=i+4 ){
     if ((key == UsToJisTable[i]) && (mod == UsToJisTable[i+1])) {
       if (mod != UsToJisTable[i+3]) {
-	shiftmodify = true;
-	keyReport.modifiers = UsToJisTable[i+3];
-	modif_key = UsToJisTable[i+3];
+  shiftmodify = true;
+  keyReport.modifiers = UsToJisTable[i+3];
+  modif_key = UsToJisTable[i+3];
       }
       else {
-	modif_key = mod;
+  modif_key = mod;
       }
       return UsToJisTable[i+2];
     }
@@ -145,15 +148,15 @@ uint8_t convertkey(uint8_t key, uint8_t mod) {
 
 void report_press(uint8_t key, uint8_t mod) {
   shiftmodify = false;
-  PrintHex<uint8_t>(key, 0x80);
-  PrintHex<uint8_t>(mod, 0x80);
-
+  // PrintHex<uint8_t>(key, 0x80);
+  // PrintHex<uint8_t>(mod, 0x80);
+  time = millis();
   if (key != 0) {
     bool already = false;
     int empty_slot = -1;
     for(int i = 0; i < REPORT_KEYS; i++) {
       if (keyReport.keys[i] == convertkey(key,mod)) {
-	// if (keyReport.keys[i] == key) {
+  // if (keyReport.keys[i] == key) {
         already = true;
       }
       if (keyReport.keys[i] == 0 && empty_slot < 0) {
@@ -167,7 +170,7 @@ void report_press(uint8_t key, uint8_t mod) {
       keyReport.keys[empty_slot] = convertkey(key,mod);
       //keyReport.keys[empty_slot] = key;
       if (!shiftmodify) {
-	keyReport.modifiers = mod;
+  keyReport.modifiers = mod;
       }
     }
     else {
@@ -186,7 +189,7 @@ void report_release(uint8_t key, uint8_t mod) {
   if (key != 0) {
     for(int i = 0; i < REPORT_KEYS; i++) {
       if (keyReport.keys[i] == convertkey(key,mod)) {
-	//      if (keyReport.keys[i] == key) {
+  //      if (keyReport.keys[i] == key) {
         keyReport.keys[i] = 0;
         break;
       }
@@ -243,10 +246,19 @@ void setup() {
     error_blink(400);
   delay( 200 );
   bthid.SetReportParser(KEYBOARD_PARSER_ID, &kbd);
+  time = millis();
   Serial.begin(115200);
+  Serial.print("start");
 }
 
 // USB Host Shield の状態と合わせる為に必要
 void loop() {
   Usb.Task();
+  if ((millis() - time) > 600000) {
+    uint8_t esc = 0x29;
+    uint8_t nomod = 0x00;
+    report_press(esc,nomod);
+    report_release(esc,nomod);
+
+  }
 }
