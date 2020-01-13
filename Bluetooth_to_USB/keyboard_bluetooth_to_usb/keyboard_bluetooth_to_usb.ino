@@ -1,6 +1,5 @@
 #include <BTHID.h>
 //#include "KeyboardParser.h"
-#include <avr/wdt.h>
 
 #include <HID.h>
 #include <SPI.h>
@@ -43,7 +42,6 @@ static const uint8_t UsToJisTable[] =
    0x31,0x02,  0x89,0x02,  // |
    0x30,0x02,  0x32,0x02,  // }
    0x35,0x02,  0x2e,0x02,  // ~
-   0x2a,0x02,  0x4c,0x00,  // Shift+BackSpace -> Delete
    0x2c,0x04,  0x35,0x04,  // Alt+Space -> Alt+Hankaku/Zenkaku
    0
   };
@@ -105,9 +103,6 @@ const int SWITCH_PIN = 7;
 const uint8_t OUTPUT_BLUETOOTH = LOW;
 const uint8_t OUTPUT_USB = HIGH;
 
-// ソフトウェアリセット
-const uint16_t bootKey = 0x7777;
-uint16_t *const bootKeyPtr = (uint16_t *)0x0800;
 
 /* ================= グローバル変数 ================= */
 
@@ -129,6 +124,7 @@ uint8_t last_switch_status;
 // 修飾キー
 uint8_t modif_key;
 uint8_t main_key = 0x00;
+uint8_t fn_key = false;
 
 // 時間関連
 unsigned long time;
@@ -192,9 +188,8 @@ uint8_t convertkey(uint8_t key, uint8_t mod) {
 // キー押下
 void report_press(uint8_t key, uint8_t mod) {
   shiftmodify = false;
-  PrintHex<uint8_t>(key, 0x80);
 
-  time = millis();
+  //  time = millis();
 
   if (mod == altkey) {
     mod = commandkey;
@@ -221,7 +216,7 @@ void report_press(uint8_t key, uint8_t mod) {
       keyReport.keys[empty_slot] = convertkey(key,mod);
       //keyReport.keys[empty_slot] = key;
       if (!shiftmodify) {
-	keyReport.modifiers = mod;
+        keyReport.modifiers = mod;
       }
     }
     else {
@@ -263,17 +258,21 @@ void report_release(uint8_t key, uint8_t mod) {
 
 // RN-42 にシリアル経由で HID コマンド送信
 void sendKeyCodesBySerial(uint8_t modifiers,
-			  uint8_t keycode0,
-			  uint8_t keycode1,
-			  uint8_t keycode2,
-			  uint8_t keycode3,
-			  uint8_t keycode4,
-			  uint8_t keycode5)
+                          uint8_t keycode0,
+                          uint8_t keycode1,
+                          uint8_t keycode2,
+                          uint8_t keycode3,
+                          uint8_t keycode4,
+                          uint8_t keycode5
+                          )
 {
   // スイッチが BLUETOOTH モードのときのみ、RN-42 に送信
   if (digitalRead(SWITCH_PIN) == OUTPUT_BLUETOOTH) {
 
     Serial1.write(0xFD); // Raw Report Mode
+
+    // 通常のキー
+
     Serial1.write(0x09); // Length
     Serial1.write(0x01); // Descriptor 0x01=Keyboard
 
@@ -286,6 +285,8 @@ void sendKeyCodesBySerial(uint8_t modifiers,
     Serial1.write(keycode3);  // keycode3
     Serial1.write(keycode4);  // keycode4
     Serial1.write(keycode5);  // keycode5
+
+
   }
 }
 
@@ -295,13 +296,6 @@ void error_blink(int period) {
     TXLED1; delay(period); TXLED0; delay(period);
     RXLED1; delay(period); RXLED0; delay(period);
   }
-}
-
-// ソフトウェアリセット
-void software_reset() {
-  *bootKeyPtr = bootKey;
-  wdt_enable(WDTO_15MS);
-  while (1) {}
 }
 
 // KeyboardReportParser をオーバーライド
@@ -334,6 +328,11 @@ void KeyboardEvent::Parse(USBHID *hid, bool is_rpt_id __attribute__((unused)), u
   if (buf[2] == 1)
     return;
 
+  // FN キー + Backspace で DELETE
+  if (fn_key && buf[2] == 0x2a) {
+    buf[2] = 0x4c;
+  }
+
   //KBDINFO       *pki = (KBDINFO*)buf;
 
   // provide event for changed control key state
@@ -347,9 +346,9 @@ void KeyboardEvent::Parse(USBHID *hid, bool is_rpt_id __attribute__((unused)), u
 
     for (uint8_t j = 2; j < 8; j++) {
       if (buf[i] == prevState.bInfo[j] && buf[i] != 1)
-	down = true;
+        down = true;
       if (buf[j] == prevState.bInfo[i] && prevState.bInfo[i] != 1)
-	up = true;
+        up = true;
     }
     if (!down) {
       HandleLockingKeys(hid, buf[i]);
@@ -361,7 +360,22 @@ void KeyboardEvent::Parse(USBHID *hid, bool is_rpt_id __attribute__((unused)), u
   for (uint8_t i = 0; i < 8; i++)
     prevState.bInfo[i] = buf[i];
 
+  // FN Key
+  if (len == 0x01) {
+
+    // 押下
+    if (buf[0] == 0x10) {
+      fn_key = true;
+    }
+    // リリース
+    else {
+      fn_key = false;
+    }
+
+  }
+
   sendKeyCodesBySerial(buf[0], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
+
 }
 
 
@@ -416,13 +430,17 @@ void loop() {
   //   lasttime = millis();
   // }
 
-  // ソフトウェアリセット
+  // BTHIDリセット
   if (digitalRead(SWITCH_PIN) != last_switch_status) {
 
-    // スイッチの ON/OFF が一秒以内に行われた場合、リセットをかける
+    // スイッチの ON/OFF が一秒以内に行われた場合、BTHID のリセットをかける
     if ((millis() - last_switch_status_change_time) < 1000) {
-      Serial.print("Restart");
-      software_reset();
+      Serial.print("BTHID Reset");
+      bthid.disconnect();
+      delay(500);
+      bthid.setProtocolMode(HID_RPT_PROTOCOL);
+      bthid.SetReportParser(KEYBOARD_PARSER_ID, &kbd);
+
     }
 
     last_switch_status = digitalRead(SWITCH_PIN);
