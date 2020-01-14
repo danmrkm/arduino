@@ -147,19 +147,19 @@ BTHID bthid(&Btd);
 
 
 // USBにキーコード送信
-void sendReport() {
+void sendReport(bool ignore_switch_status) {
 
   // スイッチが USB モードのときのみ、USB経由でキーコード送信
-  if (digitalRead(SWITCH_PIN) == OUTPUT_USB) {
-    // USB HID としてキーコードを送信
-    HID().SendReport(2, &keyReport ,sizeof(KeyReport));
+  if( (digitalRead(SWITCH_PIN) == OUTPUT_USB) || (ignore_switch_status) ){
+      // USB HID としてキーコードを送信
+      HID().SendReport(2, &keyReport ,sizeof(KeyReport));
   }
 }
 
 // 全てのキーを解除
 void releaseAll() {
   memset(&keyReport, 0, sizeof(KeyReport));
-  sendReport();
+  sendReport(false);
 }
 
 // キー変換
@@ -186,10 +186,10 @@ uint8_t convertkey(uint8_t key, uint8_t mod) {
 }
 
 // キー押下
-void report_press(uint8_t key, uint8_t mod) {
+void report_press(uint8_t key, uint8_t mod, bool ignore_switch_status = false) {
   shiftmodify = false;
 
-  //  time = millis();
+  time = millis();
 
   if (mod == altkey) {
     mod = commandkey;
@@ -227,11 +227,11 @@ void report_press(uint8_t key, uint8_t mod) {
   else {
     keyReport.modifiers = mod;
   }
-  sendReport();
+  sendReport(ignore_switch_status);
 }
 
 // キーリリース
-void report_release(uint8_t key, uint8_t mod) {
+void report_release(uint8_t key, uint8_t mod, bool ignore_switch_status = false) {
   if (mod == altkey) {
     mod = commandkey;
   }
@@ -242,7 +242,7 @@ void report_release(uint8_t key, uint8_t mod) {
   if (key != 0) {
     for(int i = 0; i < 6; i++) {
       if (keyReport.keys[i] == convertkey(key,mod)) {
-	//      if (keyReport.keys[i] == key) {
+  //      if (keyReport.keys[i] == key) {
         keyReport.keys[i] = 0;
         break;
       }
@@ -253,7 +253,7 @@ void report_release(uint8_t key, uint8_t mod) {
   } else {
     keyReport.modifiers = mod;
   }
-  sendReport();
+  sendReport(ignore_switch_status);
 }
 
 // RN-42 にシリアル経由で HID コマンド送信
@@ -303,8 +303,8 @@ class KeyboardEvent : public KeyboardReportParser {
 protected:
   void OnControlKeysChanged(uint8_t before, uint8_t after);
   void OnKeyPressed(uint8_t key) {};
-  void OnKeyDown  (uint8_t mod, uint8_t key) { report_press(key, mod);  };
-  void OnKeyUp  (uint8_t mod, uint8_t key) { report_release(key, mod); };
+  void OnKeyDown  (uint8_t mod, uint8_t key) { report_press(key, mod,false);  };
+  void OnKeyUp  (uint8_t mod, uint8_t key) { report_release(key, mod,false); };
   void Parse(USBHID *hid, bool is_rpt_id __attribute__((unused)), uint8_t len __attribute__((unused)), uint8_t *buf);
 };
 
@@ -442,7 +442,7 @@ void loop() {
       bthid.SetReportParser(KEYBOARD_PARSER_ID, &kbd);
 
     }
-
+    releaseAll();
     last_switch_status = digitalRead(SWITCH_PIN);
     last_switch_status_change_time = millis();
 
@@ -454,8 +454,8 @@ void loop() {
     // ロック済の場合は ESC を送信
     if (lock_flag) {
       main_key = 0x29;
-      report_press(main_key,nomod);
-      report_release(main_key,nomod);
+      report_press(main_key,nomod,true);
+      report_release(main_key,nomod,true);
     }
     else {
       lock_flag = true;
@@ -463,33 +463,33 @@ void loop() {
       // Windows を Lockさせる
       // Windows キー
       main_key = 0xe3;
-      report_press(main_key,nomod);
-      report_release(main_key,nomod);
+      report_press(main_key,nomod,true);
+      report_release(main_key,nomod,true);
       delay( 500 );
       // Tab キー
       main_key = 0x2b;
-      report_press(main_key,nomod);
-      report_release(main_key,nomod);
+      report_press(main_key,nomod,true);
+      report_release(main_key,nomod,true);
       delay( 500 );
       // 下矢印 キー
       main_key = 0x51;
-      report_press(main_key,nomod);
-      report_release(main_key,nomod);
+      report_press(main_key,nomod,true);
+      report_release(main_key,nomod,true);
       delay( 500 );
       // Enter キー
       main_key = 0x28;
-      report_press(main_key,nomod);
-      report_release(main_key,nomod);
+      report_press(main_key,nomod,true);
+      report_release(main_key,nomod,true);
       delay( 500 );
       // 下矢印 キー
       main_key = 0x51;
-      report_press(main_key,nomod);
-      report_release(main_key,nomod);
+      report_press(main_key,nomod,true);
+      report_release(main_key,nomod,true);
       delay( 500 );
       // Enter キー
       main_key = 0x28;
-      report_press(main_key,nomod);
-      report_release(main_key,nomod);
+      report_press(main_key,nomod,true);
+      report_release(main_key,nomod,true);
 
     }
 
