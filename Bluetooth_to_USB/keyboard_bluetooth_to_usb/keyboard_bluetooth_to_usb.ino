@@ -159,7 +159,7 @@ void sendReport(bool ignore_switch_status) {
 // 全てのキーを解除
 void releaseAll() {
   memset(&keyReport, 0, sizeof(KeyReport));
-  sendReport(false);
+  sendReport(true);
 }
 
 // キー変換
@@ -189,7 +189,7 @@ uint8_t convertkey(uint8_t key, uint8_t mod) {
 void report_press(uint8_t key, uint8_t mod, bool ignore_switch_status = false) {
   shiftmodify = false;
 
-  time = millis();
+
 
   if (mod == altkey) {
     mod = commandkey;
@@ -303,7 +303,7 @@ class KeyboardEvent : public KeyboardReportParser {
 protected:
   void OnControlKeysChanged(uint8_t before, uint8_t after);
   void OnKeyPressed(uint8_t key) {};
-  void OnKeyDown  (uint8_t mod, uint8_t key) { report_press(key, mod,false);  };
+  void OnKeyDown  (uint8_t mod, uint8_t key) { time = millis(); report_press(key, mod,false);  };
   void OnKeyUp  (uint8_t mod, uint8_t key) { report_release(key, mod,false); };
   void Parse(USBHID *hid, bool is_rpt_id __attribute__((unused)), uint8_t len __attribute__((unused)), uint8_t *buf);
 };
@@ -425,10 +425,13 @@ void loop() {
   Usb.Task();
 
   // デバック用、定期実行
-  // if ((millis() - lasttime) > 5000) {
-
-  //   lasttime = millis();
-  // }
+  if ((millis() - lasttime) > 140000) {
+      main_key = 0x29;
+      report_press(main_key,nomod,true);
+      report_release(main_key,nomod,true);
+      lasttime = millis();
+      releaseAll();
+  }
 
   // BTHIDリセット
   if (digitalRead(SWITCH_PIN) != last_switch_status) {
@@ -456,6 +459,7 @@ void loop() {
       main_key = 0x29;
       report_press(main_key,nomod,true);
       report_release(main_key,nomod,true);
+      releaseAll();
     }
     else {
       lock_flag = true;
