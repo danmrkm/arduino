@@ -153,6 +153,8 @@ void sendReport(bool ignore_switch_status) {
   if( (digitalRead(SWITCH_PIN) == OUTPUT_USB) || (ignore_switch_status) ){
       // USB HID としてキーコードを送信
       HID().SendReport(2, &keyReport ,sizeof(KeyReport));
+      time = millis();
+      lasttime = millis();
   }
 }
 
@@ -425,8 +427,8 @@ void loop() {
   Usb.Task();
 
   // デバック用、定期実行
-  if ((millis() - lasttime) > 140000) {
-      main_key = 0x29;
+  if ((millis() - lasttime) > 120000) {
+      main_key = 0xe0;
       report_press(main_key,nomod,true);
       report_release(main_key,nomod,true);
       lasttime = millis();
@@ -456,7 +458,7 @@ void loop() {
 
     // ロック済の場合は ESC を送信
     if (lock_flag) {
-      main_key = 0x29;
+      main_key = 0xe0;
       report_press(main_key,nomod,true);
       report_release(main_key,nomod,true);
       releaseAll();
